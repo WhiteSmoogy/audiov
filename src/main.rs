@@ -1,10 +1,11 @@
 use audiov::config::AppConfig;
 use audiov::hotkey::{parse_hotkey, HotkeyListener};
 use audiov::output::{send_paste_event, write_clipboard};
-use audiov::pipeline::SessionProcessor;
+use audiov::pipeline::{LanguageDetector, SessionProcessor, WhisperTranscriber};
 use audiov::preflight::run_startup_checks;
 use audiov::recorder::NativeRecorder;
 use audiov::whisper_cpp::WhisperCppEngine;
+use audiov::whisper_remote::WhisperRemoteEngine;
 use std::env;
 use std::process::{Command, Stdio};
 
@@ -13,6 +14,33 @@ struct CliArgs {
     config_path: String,
     daemon: bool,
     foreground: bool,
+}
+
+enum ActiveEngine {
+    Cpp(WhisperCppEngine),
+    Remote(WhisperRemoteEngine),
+}
+
+impl LanguageDetector for ActiveEngine {
+    fn detect_language(&self, pcm_s16le_mono_16k: &[i16]) -> Vec<audiov::lid::DetectionCandidate> {
+        match self {
+            ActiveEngine::Cpp(engine) => engine.detect_language(pcm_s16le_mono_16k),
+            ActiveEngine::Remote(engine) => engine.detect_language(pcm_s16le_mono_16k),
+        }
+    }
+}
+
+impl WhisperTranscriber for ActiveEngine {
+    fn transcribe(
+        &self,
+        pcm_s16le_mono_16k: &[i16],
+        language: Option<&str>,
+    ) -> Result<String, audiov::pipeline::TranscriptionError> {
+        match self {
+            ActiveEngine::Cpp(engine) => engine.transcribe(pcm_s16le_mono_16k, language),
+            ActiveEngine::Remote(engine) => engine.transcribe(pcm_s16le_mono_16k, language),
+        }
+    }
 }
 
 fn main() {
@@ -33,7 +61,16 @@ fn main() {
     let binding = parse_hotkey(&config.hotkey.key).expect("invalid hotkey key");
     let mut listener = HotkeyListener::new(binding).expect("failed to init hotkey listener");
 
-    let engine = WhisperCppEngine::new(config.whisper_cpp.clone());
+    let engine =
+        if config.whisper.backend.eq_ignore_ascii_case("remote") || config.whisper_remote.enabled {
+            ActiveEngine::Remote(
+                WhisperRemoteEngine::new(config.whisper_remote.clone())
+                    .expect("failed to init whisper remote engine"),
+            )
+        } else {
+            ActiveEngine::Cpp(WhisperCppEngine::new(config.whisper_cpp.clone()))
+        };
+
     let recorder =
         NativeRecorder::from_config(&config.recorder).expect("failed to init recorder backend");
     let processor = SessionProcessor {

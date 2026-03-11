@@ -10,6 +10,7 @@ whisper-rs = "0.11"
 evdev = "0.12"
 nix = { version = "0.29", features = ["signal"] }
 hound = "3"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 
 [dev-dependencies]
 tempfile = "3"

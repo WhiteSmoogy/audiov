@@ -11,6 +11,25 @@ temperature = 0.0
 # Optional acceleration flags (depends on your whisper.cpp build)
 use_gpu = false
 
+
+[whisper]
+# Transcription backend: cpp | remote
+backend = "cpp"
+
+[whisper_remote]
+# Enable remote Whisper-compatible HTTP API.
+enabled = false
+
+# Compatible with OpenAI audio transcription API format.
+endpoint = "https://api.openai.com/v1/audio/transcriptions"
+model = "whisper-1"
+
+# Put your API key here.
+api_key = ""
+
+# HTTP timeout in seconds.
+timeout_secs = 60
+
 [language_detection]
 # Enable language identification (LID) before transcription.
 enabled = true

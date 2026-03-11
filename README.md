@@ -7,6 +7,7 @@
 ## 核心特性
 
 - **本地离线识别**：基于 `whisper.cpp`，支持在本机 CPU/GPU 上完成语音转写，数据不离开设备。
+- **远端 Whisper 接口**：支持通过配置切换到 Whisper 兼容的远端 API，并在配置文件中提供 `api_key`。
 - **稳定文本注入**：通过系统剪贴板与 `/dev/uinput`（或 `ydotool`）组合，减少中文与 Unicode 字符输入异常。
 - **兼容 Wayland / X11**：避免依赖脆弱的图形层模拟，适配主流 Linux 桌面环境。
 - **守护进程模式**：支持后台常驻与全局快捷键触发，按下录音、松开粘贴，流程简洁。
@@ -99,6 +100,25 @@ cargo build --release
 
 请确保本地 `whisper.cpp` 动态库可被 `whisper-rs` 正常加载，并准备好模型文件（与 `config.example.toml` 的 `[whisper_cpp]` 对应）。
 
+
+
+### 远端 Whisper 配置
+
+可通过配置文件启用远端转写：
+
+```toml
+[whisper]
+backend = "remote"
+
+[whisper_remote]
+enabled = true
+endpoint = "https://api.openai.com/v1/audio/transcriptions"
+model = "whisper-1"
+api_key = "<YOUR_API_KEY>"
+timeout_secs = 60
+```
+
+当 `backend = "remote"`（或 `whisper_remote.enabled = true`）时，程序会调用远端 HTTP API；否则继续使用本地 `whisper.cpp`。
 
 ### 运行期可观测性与自检
 
