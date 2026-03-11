@@ -3,7 +3,7 @@ use audiov::hotkey::{parse_hotkey, HotkeyListener};
 use audiov::output::{send_paste_event, write_clipboard};
 use audiov::pipeline::SessionProcessor;
 use audiov::preflight::run_startup_checks;
-use audiov::recorder::ArecordRecorder;
+use audiov::recorder::NativeRecorder;
 use audiov::whisper_cpp::WhisperCppEngine;
 use std::env;
 use std::process::{Command, Stdio};
@@ -34,6 +34,8 @@ fn main() {
     let mut listener = HotkeyListener::new(binding).expect("failed to init hotkey listener");
 
     let engine = WhisperCppEngine::new(config.whisper_cpp.clone());
+    let recorder =
+        NativeRecorder::from_config(&config.recorder).expect("failed to init recorder backend");
     let processor = SessionProcessor {
         detector: &engine,
         transcriber: &engine,
@@ -45,7 +47,7 @@ fn main() {
     loop {
         listener.wait_for_press();
 
-        let recording = match ArecordRecorder::start() {
+        let recording = match recorder.start() {
             Ok(r) => r,
             Err(err) => {
                 eprintln!("recording start failed: {err:?}");

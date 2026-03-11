@@ -39,6 +39,16 @@ key = "windows+h"
 # This default sequence means Ctrl+V in ydotool scan codes.
 command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
 
+[recorder]
+# Native recorder backend: auto | pipewire | pulseaudio | alsa
+backend = "auto"
+
+# Optional input device/source name for the selected backend.
+# - PipeWire: pw node/target name used with `pw-cat --target`
+# - PulseAudio: source name used with `parec --device`
+# - ALSA: hw/plughw PCM name used with `arecord -D`
+# input_device = ""
+
 [targets]
 # Accuracy objective for zh/en in local benchmark conditions.
 zh_en_accuracy_target = 0.95

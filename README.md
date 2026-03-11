@@ -92,6 +92,8 @@ cargo build --release
 
 热键解析支持组合键，例如 `windows+h`、`ctrl+space`、`f8`。
 
+录音模块已抽象为 `NativeRecorder`，支持 `auto` / `pipewire` / `pulseaudio` / `alsa` 四种后端选择，默认优先尝试 PipeWire，再回退 PulseAudio 与 ALSA。
+
 
 ### whisper.cpp 运行前准备
 
