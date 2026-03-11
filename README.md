@@ -43,3 +43,41 @@ cargo build --release
 # 运行守护进程
 ./target/release/audiov --daemon
 ```
+
+
+## 语言识别（LID）接入决策（已确认）
+
+当前已确定的接入策略如下：
+
+- **自动语言识别**：每次按下快捷键触发的录音会话，先做一次语言识别。
+- **会话级识别**：仅在每次录音会话开始阶段识别一次，避免分段识别带来的额外延迟。
+- **推理参数联动**：识别到语言后，将该语言直接传给 `whisper.cpp` 作为推理语言参数，以提升速度与稳定性。
+- **语言白名单**：首期只允许 `zh` / `en`，降低误判空间并控制时延。
+- **配置文件化**：相关策略放入 TOML 配置（见 `config.example.toml`）。
+- **性能偏好**：优先低延迟。
+- **验收目标**：中英场景语言识别准确率 **>95%**。
+
+### 建议的最小实现流程
+
+1. 录音结束后，先对该段音频执行 LID。
+2. 若识别结果在白名单内且置信度达标，则将其作为 Whisper 推理语言。
+3. 否则回退到 `default_language`（默认 `zh`）。
+4. 在 debug 日志中记录：候选语言、分数、最终采用语言。
+
+
+## 当前实现进展
+
+已完成一个可运行的 LID 决策模块最小实现（Rust）：
+
+- `src/config.rs`：TOML 配置解析与默认值（对应 `config.example.toml`）。
+- `src/lid.rs`：按白名单 + 置信度阈值选择 Whisper 推理语言。
+- `src/pipeline.rs`：会话级处理流程（一次录音会话内先做 LID，再把最终语言参数传给转写器）。
+- `src/whisper_cpp.rs`：`whisper-rs` 库调用实现（直接调 whisper.cpp 库完成语言检测与带语言参数转写）。
+- `src/main.rs`：最小演示入口，使用 `WhisperCppEngine` 串起配置加载、LID 决策与转写调用。
+
+可通过 `cargo test` 验证配置解析、语言决策以及“检测结果是否真实传入转写器”的核心逻辑。
+
+
+### whisper.cpp 运行前准备
+
+请确保本地 `whisper.cpp` 动态库可被 `whisper-rs` 正常加载，并准备好模型文件（与 `config.example.toml` 的 `[whisper_cpp]` 对应）。

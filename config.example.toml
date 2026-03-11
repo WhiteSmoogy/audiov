@@ -1,0 +1,40 @@
+# audiov configuration example
+
+[whisper_cpp]
+# Local whisper model path
+model = "models/ggml-base.bin"
+
+# Runtime tuning
+threads = 4
+temperature = 0.0
+
+# Optional acceleration flags (depends on your whisper.cpp build)
+use_gpu = false
+flash_attn = false
+
+[language_detection]
+# Enable language identification (LID) before transcription.
+enabled = true
+
+# One-shot detection per push-to-talk recording session.
+mode = "per_session"
+
+# Allowed language whitelist for low-latency routing.
+allowed_languages = ["zh", "en"]
+
+# If true, detected/fallback language is passed to whisper inference.
+use_detected_language_for_inference = true
+
+# If confidence is below threshold, runtime falls back to default_language.
+confidence_threshold = 0.65
+
+# Default language used when detection fails / low confidence / not whitelisted.
+default_language = "zh"
+
+[targets]
+# Accuracy objective for zh/en in local benchmark conditions.
+zh_en_accuracy_target = 0.95
+
+[performance]
+# Product preference: lower end-to-end latency.
+priority = "latency"
