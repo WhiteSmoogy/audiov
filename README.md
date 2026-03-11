@@ -23,7 +23,7 @@
 
 ## 快速开始
 
-> 当前项目仍在开发中（WIP）。
+> 当前项目仍在开发中（WIP），但已支持最小可用的前后台运行与基础自检。
 
 ### 依赖项
 
@@ -41,8 +41,19 @@ cd audiov
 cargo build --release
 
 # 运行守护进程
-./target/release/audiov --daemon
+./target/release/audiov --daemon --config ~/.config/audiov/config.toml
 ```
+### 启动参数
+
+- `--daemon`：以后台模式启动（会拉起一个 `--foreground` 子进程并返回）。
+- `--foreground`：前台运行（默认）。
+- `--config <path>`：指定配置文件路径。
+
+配置文件默认查找顺序：
+
+1. `AUDIOV_CONFIG` 环境变量；
+2. `~/.config/audiov/config.toml`（若存在）；
+3. 若不存在则直接报错（需要显式提供配置文件）。
 
 
 ## 语言识别（LID）接入决策（已确认）
@@ -77,9 +88,16 @@ cargo build --release
 
 可通过 `cargo test` 验证配置解析、语言决策以及“检测结果是否真实传入转写器”的核心逻辑。
 
-新增了最小可用的全局按键按住说话流程：监听全局热键（默认 `F8`）按下开始录音、松开结束录音，随后执行转写，把文本写入剪贴板，并调用可配置命令向当前窗口发送粘贴按键。
+新增了最小可用的全局按键按住说话流程：监听全局热键（默认 `Windows+H`）按下开始录音、松开结束录音，随后执行转写，把文本写入剪贴板，并调用可配置命令向当前窗口发送粘贴按键。
+
+热键解析支持组合键，例如 `windows+h`、`ctrl+space`、`f8`。
 
 
 ### whisper.cpp 运行前准备
 
 请确保本地 `whisper.cpp` 动态库可被 `whisper-rs` 正常加载，并准备好模型文件（与 `config.example.toml` 的 `[whisper_cpp]` 对应）。
+
+
+### 运行期可观测性与自检
+
+程序启动时会输出基础依赖检查告警（模型文件、`arecord`、剪贴板工具、粘贴命令），并在每次会话打印 LID 最终采用语言与原因，便于排障。
