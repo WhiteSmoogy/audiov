@@ -30,6 +30,15 @@ confidence_threshold = 0.65
 # Default language used when detection fails / low confidence / not whitelisted.
 default_language = "zh"
 
+[hotkey]
+# Global push-to-talk hotkey (currently supports f8-f12).
+key = "f8"
+
+[paste]
+# Command used to trigger paste event for focused app.
+# This default sequence means Ctrl+V in ydotool scan codes.
+command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
+
 [targets]
 # Accuracy objective for zh/en in local benchmark conditions.
 zh_en_accuracy_target = 0.95
