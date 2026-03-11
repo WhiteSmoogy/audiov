@@ -126,7 +126,7 @@ impl Default for HotkeyConfig {
 }
 
 fn default_hotkey() -> String {
-    "f8".to_owned()
+    "windows+h".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]

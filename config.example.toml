@@ -31,8 +31,8 @@ confidence_threshold = 0.65
 default_language = "zh"
 
 [hotkey]
-# Global push-to-talk hotkey (currently supports f8-f12).
-key = "f8"
+# Global push-to-talk hotkey (supports combos, e.g. windows+h / ctrl+space / f8).
+key = "windows+h"
 
 [paste]
 # Command used to trigger paste event for focused app.
