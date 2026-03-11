@@ -1,4 +1,5 @@
 pub mod config;
+pub mod kglobalaccel;
 pub mod lid;
 pub mod output;
 pub mod pipeline;

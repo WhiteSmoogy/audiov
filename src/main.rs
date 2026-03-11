@@ -1,8 +1,9 @@
 use audiov::config::AppConfig;
+use audiov::kglobalaccel::{KGlobalAccelError, KGlobalAccelListener};
 use audiov::output::{send_paste_event, write_clipboard};
 use audiov::pipeline::{LanguageDetector, SessionProcessor, WhisperTranscriber};
 use audiov::preflight::run_startup_checks;
-use audiov::recorder::NativeRecorder;
+use audiov::recorder::{ActiveRecording, NativeRecorder};
 use audiov::whisper_cpp::WhisperCppEngine;
 use audiov::whisper_remote::WhisperRemoteEngine;
 use std::env;
@@ -13,6 +14,7 @@ struct CliArgs {
     config_path: String,
     daemon: bool,
     foreground: bool,
+    manual: bool,
     transcribe_wav: Option<String>,
 }
 
@@ -81,14 +83,27 @@ fn main() {
         lid_config: &config.language_detection,
     };
 
-    run_manual_loop(&recorder, &processor, &config);
+    if args.manual || !config.hotkey.enabled {
+        run_manual_loop(&recorder, &processor, &config);
+        return;
+    }
+
+    let listener = KGlobalAccelListener::new(&config.hotkey).unwrap_or_else(|err| {
+        panic!(
+            "failed to init KDE hotkey backend for shortcut {}: {}",
+            config.hotkey.shortcut,
+            describe_kglobalaccel_error(err)
+        )
+    });
+
+    run_hotkey_loop(&recorder, &processor, &config, &listener);
 }
 
 fn parse_args() -> CliArgs {
     let mut config_path: Option<String> = None;
     let mut daemon = false;
     let mut foreground = false;
-    let mut _manual = false;
+    let mut manual = false;
     let mut transcribe_wav: Option<String> = None;
 
     let mut args = env::args().skip(1);
@@ -96,7 +111,7 @@ fn parse_args() -> CliArgs {
         match arg.as_str() {
             "--daemon" => daemon = true,
             "--foreground" => foreground = true,
-            "--manual" => _manual = true,
+            "--manual" => manual = true,
             "--transcribe-wav" => {
                 if let Some(path) = args.next() {
                     transcribe_wav = Some(path);
@@ -115,6 +130,7 @@ fn parse_args() -> CliArgs {
         config_path: config_path.unwrap_or_else(default_config_path),
         daemon,
         foreground,
+        manual,
         transcribe_wav,
     }
 }
@@ -207,6 +223,12 @@ fn handle_transcription_result<D, T>(
     D: LanguageDetector,
     T: WhisperTranscriber,
 {
+    let stats = audio_stats(audio);
+    eprintln!(
+        "[DEBUG] audio samples={} duration_ms={} peak={} rms={}",
+        stats.sample_count, stats.duration_ms, stats.peak, stats.rms
+    );
+
     let output = match processor.process_session(audio) {
         Ok(out) => out,
         Err(err) => {
@@ -217,8 +239,10 @@ fn handle_transcription_result<D, T>(
 
     let text = output.text.trim();
     eprintln!(
-        "[DEBUG] language={} reason={:?}",
-        output.language_decision.selected_language, output.language_decision.reason
+        "[DEBUG] language={} reason={:?} text_len={}",
+        output.language_decision.selected_language,
+        output.language_decision.reason,
+        text.len()
     );
 
     if text.is_empty() {
@@ -239,6 +263,56 @@ fn handle_transcription_result<D, T>(
 
     if let Err(err) = send_paste_event(&config.paste.command) {
         eprintln!("[WARN] paste event failed: {err:?}");
+    }
+}
+
+fn run_hotkey_loop<D, T>(
+    recorder: &NativeRecorder,
+    processor: &SessionProcessor<'_, D, T>,
+    config: &AppConfig,
+    listener: &KGlobalAccelListener,
+) where
+    D: LanguageDetector,
+    T: WhisperTranscriber,
+{
+    eprintln!(
+        "[INFO] audiov started with KDE global shortcut {}",
+        config.hotkey.shortcut
+    );
+
+    let mut active_recording: Option<ActiveRecording> = None;
+
+    loop {
+        if let Err(err) = listener.wait_for_trigger() {
+            panic!("failed while waiting for KDE hotkey: {}", describe_kglobalaccel_error(err));
+        }
+
+        if let Some(recording) = active_recording.take() {
+            eprintln!("[INFO] stopping recording");
+            let audio = match recording.stop_and_collect() {
+                Ok(samples) => samples,
+                Err(err) => {
+                    eprintln!("recording stop failed: {err:?}");
+                    continue;
+                }
+            };
+
+            if audio.is_empty() {
+                eprintln!("[INFO] empty recording");
+                continue;
+            }
+
+            handle_transcription_result(processor, config, &audio);
+            continue;
+        }
+
+        match recorder.start() {
+            Ok(recording) => {
+                eprintln!("[INFO] recording...");
+                active_recording = Some(recording);
+            }
+            Err(err) => eprintln!("recording start failed: {err:?}"),
+        }
     }
 }
 
@@ -293,8 +367,54 @@ fn wait_for_enter(action: &str) {
     let _ = io::stdin().read_line(&mut line);
 }
 
+struct AudioStats {
+    sample_count: usize,
+    duration_ms: usize,
+    peak: i16,
+    rms: i16,
+}
+
+fn audio_stats(audio: &[i16]) -> AudioStats {
+    if audio.is_empty() {
+        return AudioStats {
+            sample_count: 0,
+            duration_ms: 0,
+            peak: 0,
+            rms: 0,
+        };
+    }
+
+    let mut peak: i16 = 0;
+    let mut sum_squares = 0.0_f64;
+
+    for &sample in audio {
+        let abs = sample.saturating_abs();
+        peak = peak.max(abs);
+        let s = sample as f64;
+        sum_squares += s * s;
+    }
+
+    let rms = (sum_squares / audio.len() as f64).sqrt() as i16;
+
+    AudioStats {
+        sample_count: audio.len(),
+        duration_ms: audio.len() * 1000 / 16_000,
+        peak,
+        rms,
+    }
+}
+
 fn reject_daemon_mode(args: &CliArgs) {
     if args.daemon && !args.foreground {
-        panic!("--daemon is not supported after hotkey mode removal; use --manual in a terminal");
+        panic!("--daemon is not supported; run audiov in the foreground");
+    }
+}
+
+fn describe_kglobalaccel_error(err: KGlobalAccelError) -> String {
+    match err {
+        KGlobalAccelError::Dbus(inner) => inner.to_string(),
+        KGlobalAccelError::InvalidShortcut(shortcut) => {
+            format!("unsupported shortcut syntax: {shortcut}")
+        }
     }
 }

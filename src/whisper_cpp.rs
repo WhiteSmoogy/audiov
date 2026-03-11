@@ -1,48 +1,30 @@
 use crate::config::WhisperCppConfig;
 use crate::lid::DetectionCandidate;
 use crate::pipeline::{LanguageDetector, TranscriptionError, WhisperTranscriber};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::panic::{catch_unwind, set_hook, take_hook, AssertUnwindSafe};
-use std::sync::Mutex;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 pub struct WhisperCppEngine {
     cfg: WhisperCppConfig,
     ctx: WhisperContext,
-    cache: Mutex<Option<CachedRun>>,
-}
-
-#[derive(Clone)]
-struct CachedRun {
-    audio_hash: u64,
-    requested_language: Option<String>,
-    text: String,
-    detected_language: Option<String>,
-    confidence: Option<f32>,
 }
 
 impl WhisperCppEngine {
     pub fn new(cfg: WhisperCppConfig) -> Result<Self, TranscriptionError> {
         let ctx = create_context(&cfg)?;
-        Ok(Self {
-            cfg,
-            ctx,
-            cache: Mutex::new(None),
-        })
+        Ok(Self { cfg, ctx })
     }
 
     fn pcm_i16_to_f32(&self, pcm_s16le_mono_16k: &[i16]) -> Vec<f32> {
+        let gain = input_gain(pcm_s16le_mono_16k);
+        if gain > 1.0 {
+            eprintln!("[DEBUG] whisper input_gain={gain:.2}");
+        }
+
         pcm_s16le_mono_16k
             .iter()
-            .map(|s| *s as f32 / i16::MAX as f32)
+            .map(|s| ((*s as f32 / i16::MAX as f32) * gain).clamp(-1.0, 1.0))
             .collect()
-    }
-
-    fn audio_hash(&self, pcm_s16le_mono_16k: &[i16]) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        pcm_s16le_mono_16k.hash(&mut hasher);
-        hasher.finish()
     }
 
     fn run_full(
@@ -50,11 +32,6 @@ impl WhisperCppEngine {
         pcm_s16le_mono_16k: &[i16],
         language: Option<&str>,
     ) -> Result<(String, Option<String>, Option<f32>), TranscriptionError> {
-        let audio_hash = self.audio_hash(pcm_s16le_mono_16k);
-        if let Some(cached) = self.lookup_cache(audio_hash, language) {
-            return Ok((cached.text, cached.detected_language, cached.confidence));
-        }
-
         let audio = self.pcm_i16_to_f32(pcm_s16le_mono_16k);
         let mut state = self
             .ctx
@@ -64,6 +41,10 @@ impl WhisperCppEngine {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_n_threads(self.cfg.threads as i32);
         params.set_translate(false);
+        params.set_no_context(true);
+        params.set_no_timestamps(true);
+        params.set_single_segment(true);
+        params.set_suppress_blank(false);
         params.set_temperature(self.cfg.temperature);
         params.set_print_progress(false);
         params.set_print_realtime(false);
@@ -81,22 +62,33 @@ impl WhisperCppEngine {
             .full(params, &audio)
             .map_err(|e| TranscriptionError::Engine(format!("whisper full run failed: {e}")))?;
 
-        let n = state
-            .full_n_segments()
-            .map_err(|e| TranscriptionError::Engine(format!("read segment count failed: {e}")))?;
+        let n = state.full_n_segments();
+        eprintln!(
+            "[DEBUG] whisper requested_language={} segments={}",
+            language.unwrap_or("auto"),
+            n
+        );
 
         let mut text = String::new();
         for i in 0..n {
-            let seg = state
-                .full_get_segment_text(i)
-                .map_err(|e| TranscriptionError::Engine(format!("read segment {i} failed: {e}")))?;
+            let segment = state
+                .get_segment(i)
+                .ok_or_else(|| {
+                    TranscriptionError::Engine(format!("read segment {i} failed: out of bounds"))
+                })?;
+            let seg = segment.to_str().map_err(|e| {
+                TranscriptionError::Engine(format!("read segment {i} failed: {e}"))
+            })?;
             text.push_str(seg.trim());
             if i + 1 < n {
                 text.push(' ');
             }
         }
 
-        let lang_id = state.full_lang_id_from_state().ok();
+        let lang_id = match state.full_lang_id_from_state() {
+            id if id >= 0 => Some(id),
+            _ => None,
+        };
         let lang = lang_id.and_then(|id| whisper_rs::get_lang_str(id).map(str::to_owned));
         let confidence = match lang_id {
             Some(id) => match safe_lang_detect(&mut state, self.cfg.threads) {
@@ -105,40 +97,14 @@ impl WhisperCppEngine {
             },
             None => None,
         };
-
-        self.store_cache(CachedRun {
-            audio_hash,
-            requested_language: language.map(str::to_owned),
-            text: text.clone(),
-            detected_language: lang.clone(),
+        eprintln!(
+            "[DEBUG] whisper detected_language={} confidence={:?} text_len={}",
+            lang.as_deref().unwrap_or("unknown"),
             confidence,
-        });
+            text.trim().len()
+        );
 
         Ok((text, lang, confidence))
-    }
-
-    fn lookup_cache(&self, audio_hash: u64, language: Option<&str>) -> Option<CachedRun> {
-        let cached = self.cache.lock().ok()?.clone()?;
-        if cached.audio_hash != audio_hash {
-            return None;
-        }
-
-        match (&cached.requested_language, language) {
-            (Some(cached_lang), Some(requested_lang)) if cached_lang == requested_lang => Some(cached),
-            (None, None) => Some(cached),
-            (None, Some(requested_lang))
-                if cached.detected_language.as_deref() == Some(requested_lang) =>
-            {
-                Some(cached)
-            }
-            _ => None,
-        }
-    }
-
-    fn store_cache(&self, run: CachedRun) {
-        if let Ok(mut cache) = self.cache.lock() {
-            *cache = Some(run);
-        }
     }
 }
 
@@ -160,9 +126,27 @@ fn safe_lang_detect(
     set_hook(hook);
 
     match result {
-        Ok(inner) => Ok(inner.unwrap_or_default()),
+        Ok(inner) => Ok(inner.map(|(_, probs)| probs).unwrap_or_default()),
         Err(err) => Err(err),
     }
+}
+
+fn input_gain(pcm_s16le_mono_16k: &[i16]) -> f32 {
+    let peak = pcm_s16le_mono_16k
+        .iter()
+        .map(|sample| sample.saturating_abs() as i32)
+        .max()
+        .unwrap_or(0);
+
+    if peak < 256 {
+        return 1.0;
+    }
+
+    let normalized_peak = peak as f32 / i16::MAX as f32;
+    let target_peak = 0.85_f32;
+    let max_gain = 6.0_f32;
+
+    (target_peak / normalized_peak).clamp(1.0, max_gain)
 }
 
 impl LanguageDetector for WhisperCppEngine {
@@ -189,5 +173,19 @@ impl WhisperTranscriber for WhisperCppEngine {
     ) -> Result<String, TranscriptionError> {
         let (text, _, _) = self.run_full(pcm_s16le_mono_16k, language)?;
         Ok(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_gain_boosts_low_level_audio_with_limit() {
+        assert_eq!(input_gain(&[]), 1.0);
+        assert_eq!(input_gain(&[100, -200]), 1.0);
+        assert!((input_gain(&[2_000, -2_000]) - 6.0).abs() < f32::EPSILON);
+        assert!(input_gain(&[10_000, -10_000]) > 1.0);
+        assert!(input_gain(&[30_000, -30_000]) <= 1.0);
     }
 }

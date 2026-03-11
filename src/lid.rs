@@ -25,7 +25,7 @@ pub fn choose_inference_language(
     lid_config: &LanguageDetectionConfig,
     candidates: &[DetectionCandidate],
 ) -> InferenceLanguageDecision {
-    if !lid_config.enabled || !lid_config.use_detected_language_for_inference {
+    if !lid_config.enabled {
         return InferenceLanguageDecision {
             selected_language: lid_config.default_language.clone(),
             reason: DecisionReason::LidDisabled,
@@ -73,7 +73,10 @@ mod tests {
 
     #[test]
     fn chooses_whitelisted_lang_above_threshold() {
-        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            ..LanguageDetectionConfig::default()
+        };
         let decision = choose_inference_language(
             &cfg,
             &[DetectionCandidate {
@@ -88,7 +91,10 @@ mod tests {
 
     #[test]
     fn falls_back_when_below_threshold() {
-        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            ..LanguageDetectionConfig::default()
+        };
         let decision = choose_inference_language(
             &cfg,
             &[DetectionCandidate {
@@ -103,7 +109,10 @@ mod tests {
 
     #[test]
     fn falls_back_when_not_whitelisted() {
-        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            ..LanguageDetectionConfig::default()
+        };
         let decision = choose_inference_language(
             &cfg,
             &[DetectionCandidate {
@@ -118,7 +127,10 @@ mod tests {
 
     #[test]
     fn falls_back_when_detection_missing() {
-        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            ..LanguageDetectionConfig::default()
+        };
         let decision = choose_inference_language(&cfg, &[]);
 
         assert_eq!(decision.selected_language, "zh");

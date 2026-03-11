@@ -2,7 +2,7 @@
 
 [whisper_cpp]
 # Local whisper model path
-model = "models/ggml-base.bin"
+model = "models/ggml-large-v1.bin"
 
 # Runtime tuning
 threads = 4
@@ -32,7 +32,7 @@ timeout_secs = 60
 
 [language_detection]
 # Enable language identification (LID) before transcription.
-enabled = true
+enabled = false
 
 # One-shot detection per push-to-talk recording session.
 mode = "per_session"
@@ -41,13 +41,27 @@ mode = "per_session"
 allowed_languages = ["zh", "en"]
 
 # If true, detected/fallback language is passed to whisper inference.
-use_detected_language_for_inference = true
+# Keep this false if you want to skip language inference entirely.
+use_detected_language_for_inference = false
 
 # If confidence is below threshold, runtime falls back to default_language.
 confidence_threshold = 0.65
 
 # Default language used when detection fails / low confidence / not whitelisted.
 default_language = "zh"
+
+[hotkey]
+# KDE / Plasma global shortcut backend via org.kde.KGlobalAccel.
+enabled = true
+
+# Toggle recording on each press.
+shortcut = "Meta+H"
+
+# Stable IDs shown in KDE global shortcuts settings.
+component_unique = "audiov"
+component_friendly = "audiov"
+action_unique = "toggle-recording"
+action_friendly = "Toggle Recording"
 
 [paste]
 # Command used to trigger paste event for focused app.

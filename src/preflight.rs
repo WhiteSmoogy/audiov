@@ -29,6 +29,12 @@ pub fn run_startup_checks(config: &AppConfig) -> Vec<PreflightWarning> {
         });
     }
 
+    if config.hotkey.enabled && env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+        warnings.push(PreflightWarning {
+            message: "hotkey backend requires DBUS_SESSION_BUS_ADDRESS".to_owned(),
+        });
+    }
+
     if !tool_exists("arecord") {
         warnings.push(PreflightWarning {
             message: "missing recorder dependency: arecord".to_owned(),

@@ -1,5 +1,7 @@
 use crate::config::LanguageDetectionConfig;
-use crate::lid::{choose_inference_language, DetectionCandidate, InferenceLanguageDecision};
+use crate::lid::{
+    choose_inference_language, DecisionReason, DetectionCandidate, InferenceLanguageDecision,
+};
 
 pub trait LanguageDetector {
     fn detect_language(&self, pcm_s16le_mono_16k: &[i16]) -> Vec<DetectionCandidate>;
@@ -39,22 +41,46 @@ where
         &self,
         pcm_s16le_mono_16k: &[i16],
     ) -> Result<SessionOutput, TranscriptionError> {
-        let candidates = if self.lid_config.enabled {
-            self.detector.detect_language(pcm_s16le_mono_16k)
+        let (decision, retry_language_override) = if self.lid_config.enabled {
+            let candidates = self.detector.detect_language(pcm_s16le_mono_16k);
+            let decision = choose_inference_language(self.lid_config, &candidates);
+            let language = if decision.reason == DecisionReason::SelectedFromDetection {
+                Some(decision.selected_language.clone())
+            } else {
+                None
+            };
+            (decision, language)
         } else {
-            Vec::new()
+            (
+                InferenceLanguageDecision {
+                    selected_language: self.lid_config.default_language.clone(),
+                    reason: DecisionReason::LidDisabled,
+                },
+                None::<String>,
+            )
         };
 
-        let decision = choose_inference_language(self.lid_config, &candidates);
-        let language_arg = if self.lid_config.use_detected_language_for_inference {
+        let forced_language_override = if self.lid_config.use_detected_language_for_inference {
             Some(decision.selected_language.as_str())
+        } else if !self.lid_config.enabled {
+            Some(self.lid_config.default_language.as_str())
         } else {
             None
         };
 
-        let text = self
+        let mut text = self
             .transcriber
-            .transcribe(pcm_s16le_mono_16k, language_arg)?;
+            .transcribe(pcm_s16le_mono_16k, forced_language_override)?;
+
+        if text.trim().is_empty()
+            && !self.lid_config.use_detected_language_for_inference
+            && matches!(decision.reason, DecisionReason::SelectedFromDetection)
+        {
+            if let Some(language) = retry_language_override.as_deref() {
+                eprintln!("[DEBUG] retry transcription with detected language={language}");
+                text = self.transcriber.transcribe(pcm_s16le_mono_16k, Some(language))?;
+            }
+        }
 
         Ok(SessionOutput {
             text,
@@ -81,6 +107,7 @@ mod tests {
 
     struct RecordingTranscriber {
         pub language_received: RefCell<Option<String>>,
+        pub responses: RefCell<Vec<String>>,
     }
 
     impl WhisperTranscriber for RecordingTranscriber {
@@ -90,13 +117,22 @@ mod tests {
             language: Option<&str>,
         ) -> Result<String, TranscriptionError> {
             *self.language_received.borrow_mut() = language.map(str::to_owned);
-            Ok("hello".to_owned())
+            Ok(self
+                .responses
+                .borrow_mut()
+                .drain(..1)
+                .next()
+                .unwrap_or_else(|| "hello".to_owned()))
         }
     }
 
     #[test]
     fn passes_detected_language_to_transcriber() {
-        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            use_detected_language_for_inference: true,
+            ..LanguageDetectionConfig::default()
+        };
         let detector = FakeDetector {
             candidates: vec![DetectionCandidate {
                 language: "en".to_owned(),
@@ -105,6 +141,7 @@ mod tests {
         };
         let transcriber = RecordingTranscriber {
             language_received: RefCell::new(None),
+            responses: RefCell::new(vec!["hello".to_owned()]),
         };
 
         let processor = SessionProcessor {
@@ -124,7 +161,11 @@ mod tests {
 
     #[test]
     fn falls_back_to_default_language_when_detection_not_whitelisted() {
-        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            use_detected_language_for_inference: true,
+            ..LanguageDetectionConfig::default()
+        };
         let detector = FakeDetector {
             candidates: vec![DetectionCandidate {
                 language: "ja".to_owned(),
@@ -133,6 +174,7 @@ mod tests {
         };
         let transcriber = RecordingTranscriber {
             language_received: RefCell::new(None),
+            responses: RefCell::new(vec!["hello".to_owned()]),
         };
 
         let processor = SessionProcessor {
@@ -152,6 +194,7 @@ mod tests {
     #[test]
     fn sends_no_language_when_disabled_for_inference() {
         let cfg = LanguageDetectionConfig {
+            enabled: false,
             use_detected_language_for_inference: false,
             ..LanguageDetectionConfig::default()
         };
@@ -164,6 +207,7 @@ mod tests {
         };
         let transcriber = RecordingTranscriber {
             language_received: RefCell::new(None),
+            responses: RefCell::new(vec!["hello".to_owned(), "hello".to_owned()]),
         };
 
         let processor = SessionProcessor {
@@ -173,6 +217,41 @@ mod tests {
         };
 
         let _ = processor.process_session(&[1_i16]).expect("process");
-        assert_eq!(transcriber.language_received.borrow().clone(), None);
+        assert_eq!(
+            transcriber.language_received.borrow().clone(),
+            Some("zh".to_owned())
+        );
+    }
+
+    #[test]
+    fn retries_with_detected_language_after_empty_auto_result() {
+        let cfg = LanguageDetectionConfig::default();
+        let cfg = LanguageDetectionConfig {
+            enabled: true,
+            ..cfg
+        };
+        let detector = FakeDetector {
+            candidates: vec![DetectionCandidate {
+                language: "zh".to_owned(),
+                confidence: 0.99,
+            }],
+        };
+        let transcriber = RecordingTranscriber {
+            language_received: RefCell::new(None),
+            responses: RefCell::new(vec![String::new(), "ni hao".to_owned()]),
+        };
+
+        let processor = SessionProcessor {
+            detector: &detector,
+            transcriber: &transcriber,
+            lid_config: &cfg,
+        };
+
+        let output = processor.process_session(&[1_i16, 2, 3]).expect("process");
+        assert_eq!(output.text, "ni hao");
+        assert_eq!(
+            transcriber.language_received.borrow().clone(),
+            Some("zh".to_owned())
+        );
     }
 }

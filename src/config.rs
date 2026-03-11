@@ -13,6 +13,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub whisper: WhisperConfig,
     #[serde(default)]
+    pub hotkey: HotkeyConfig,
+    #[serde(default)]
     pub paste: PasteConfig,
     #[serde(default)]
     pub recorder: RecorderConfig,
@@ -33,13 +35,13 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct LanguageDetectionConfig {
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub enabled: bool,
     #[serde(default = "default_mode")]
     pub mode: String,
     #[serde(default = "default_allowed_languages")]
     pub allowed_languages: Vec<String>,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub use_detected_language_for_inference: bool,
     #[serde(default = "default_confidence_threshold")]
     pub confidence_threshold: f32,
@@ -50,10 +52,10 @@ pub struct LanguageDetectionConfig {
 impl Default for LanguageDetectionConfig {
     fn default() -> Self {
         Self {
-            enabled: default_true(),
+            enabled: default_false(),
             mode: default_mode(),
             allowed_languages: default_allowed_languages(),
-            use_detected_language_for_inference: default_true(),
+            use_detected_language_for_inference: default_false(),
             confidence_threshold: default_confidence_threshold(),
             default_language: default_language(),
         }
@@ -144,7 +146,7 @@ impl Default for WhisperCppConfig {
 }
 
 fn default_whisper_model() -> String {
-    "models/ggml-base.bin".to_owned()
+    "models/ggml-large-v1.bin".to_owned()
 }
 
 fn default_whisper_threads() -> usize {
@@ -173,6 +175,55 @@ fn default_remote_timeout_secs() -> u64 {
 
 fn default_whisper_backend() -> String {
     "cpp".to_owned()
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct HotkeyConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_hotkey_shortcut")]
+    pub shortcut: String,
+    #[serde(default = "default_hotkey_component_unique")]
+    pub component_unique: String,
+    #[serde(default = "default_hotkey_component_friendly")]
+    pub component_friendly: String,
+    #[serde(default = "default_hotkey_action_unique")]
+    pub action_unique: String,
+    #[serde(default = "default_hotkey_action_friendly")]
+    pub action_friendly: String,
+}
+
+impl Default for HotkeyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            shortcut: default_hotkey_shortcut(),
+            component_unique: default_hotkey_component_unique(),
+            component_friendly: default_hotkey_component_friendly(),
+            action_unique: default_hotkey_action_unique(),
+            action_friendly: default_hotkey_action_friendly(),
+        }
+    }
+}
+
+fn default_hotkey_shortcut() -> String {
+    "Meta+H".to_owned()
+}
+
+fn default_hotkey_component_unique() -> String {
+    "audiov".to_owned()
+}
+
+fn default_hotkey_component_friendly() -> String {
+    "audiov".to_owned()
+}
+
+fn default_hotkey_action_unique() -> String {
+    "toggle-recording".to_owned()
+}
+
+fn default_hotkey_action_friendly() -> String {
+    "Toggle Recording".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -235,6 +286,7 @@ mod tests {
         assert_eq!(cfg.whisper_cpp, WhisperCppConfig::default());
         assert_eq!(cfg.whisper_remote, WhisperRemoteConfig::default());
         assert_eq!(cfg.whisper, WhisperConfig::default());
+        assert_eq!(cfg.hotkey, HotkeyConfig::default());
         assert_eq!(cfg.paste, PasteConfig::default());
         assert_eq!(cfg.recorder, RecorderConfig::default());
     }
@@ -252,7 +304,7 @@ mod tests {
             default_language = "zh"
 
             [whisper_cpp]
-            model = "models/ggml-small.bin"
+            model = "models/ggml-large-v1.bin"
             threads = 6
             temperature = 0.2
             use_gpu = true
@@ -266,6 +318,14 @@ mod tests {
 
             [whisper]
             backend = "remote"
+
+            [hotkey]
+            enabled = true
+            shortcut = "Meta+H"
+            component_unique = "audiov"
+            component_friendly = "audiov"
+            action_unique = "toggle-recording"
+            action_friendly = "Toggle Recording"
 
             [paste]
             command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
@@ -281,12 +341,15 @@ mod tests {
 
         assert!(cfg.language_detection.enabled);
         assert_eq!(cfg.language_detection.confidence_threshold, 0.70);
-        assert_eq!(cfg.whisper_cpp.model, "models/ggml-small.bin");
+        assert_eq!(cfg.whisper_cpp.model, "models/ggml-large-v1.bin");
         assert_eq!(cfg.whisper_cpp.threads, 6);
         assert!(cfg.whisper_cpp.use_gpu);
         assert!(cfg.whisper_remote.enabled);
         assert_eq!(cfg.whisper_remote.api_key, "test-key");
         assert_eq!(cfg.whisper.backend, "remote");
+        assert!(cfg.hotkey.enabled);
+        assert_eq!(cfg.hotkey.shortcut, "Meta+H");
+        assert_eq!(cfg.hotkey.action_unique, "toggle-recording");
         assert_eq!(cfg.paste.command[0], "ydotool");
         assert_eq!(cfg.recorder.backend, "pipewire");
         assert_eq!(
