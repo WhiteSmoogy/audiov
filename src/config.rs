@@ -8,6 +8,10 @@ pub struct AppConfig {
     pub language_detection: LanguageDetectionConfig,
     #[serde(default)]
     pub whisper_cpp: WhisperCppConfig,
+    #[serde(default)]
+    pub hotkey: HotkeyConfig,
+    #[serde(default)]
+    pub paste: PasteConfig,
 }
 
 impl AppConfig {
@@ -107,6 +111,48 @@ fn default_whisper_temperature() -> f32 {
     0.0
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct HotkeyConfig {
+    #[serde(default = "default_hotkey")]
+    pub key: String,
+}
+
+impl Default for HotkeyConfig {
+    fn default() -> Self {
+        Self {
+            key: default_hotkey(),
+        }
+    }
+}
+
+fn default_hotkey() -> String {
+    "f8".to_owned()
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct PasteConfig {
+    #[serde(default = "default_paste_command")]
+    pub command: Vec<String>,
+}
+
+impl Default for PasteConfig {
+    fn default() -> Self {
+        Self {
+            command: default_paste_command(),
+        }
+    }
+}
+
+fn default_paste_command() -> Vec<String> {
+    vec![
+        "ydotool".to_owned(),
+        "key".to_owned(),
+        "29:1".to_owned(),
+        "47:1".to_owned(),
+        "47:0".to_owned(),
+        "29:0".to_owned(),
+    ]
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +166,8 @@ mod tests {
 
         assert_eq!(cfg.language_detection, LanguageDetectionConfig::default());
         assert_eq!(cfg.whisper_cpp, WhisperCppConfig::default());
+        assert_eq!(cfg.hotkey, HotkeyConfig::default());
+        assert_eq!(cfg.paste, PasteConfig::default());
     }
 
     #[test]
@@ -139,6 +187,12 @@ mod tests {
             threads = 6
             temperature = 0.2
             use_gpu = true
+
+            [hotkey]
+            key = "f9"
+
+            [paste]
+            command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
             "#,
         )
         .expect("write config");
@@ -150,5 +204,7 @@ mod tests {
         assert_eq!(cfg.whisper_cpp.model, "models/ggml-small.bin");
         assert_eq!(cfg.whisper_cpp.threads, 6);
         assert!(cfg.whisper_cpp.use_gpu);
+        assert_eq!(cfg.hotkey.key, "f9");
+        assert_eq!(cfg.paste.command[0], "ydotool");
     }
 }
