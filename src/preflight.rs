@@ -10,7 +10,17 @@ pub struct PreflightWarning {
 pub fn run_startup_checks(config: &AppConfig) -> Vec<PreflightWarning> {
     let mut warnings = Vec::new();
 
-    if !Path::new(&config.whisper_cpp.model).exists() {
+    if config.whisper.backend.eq_ignore_ascii_case("remote") || config.whisper_remote.enabled {
+        if config.whisper_remote.api_key.trim().is_empty() {
+            warnings.push(PreflightWarning {
+                message: "whisper remote enabled but whisper_remote.api_key is empty".to_owned(),
+            });
+        }
+    }
+
+    if !(config.whisper.backend.eq_ignore_ascii_case("remote") || config.whisper_remote.enabled)
+        && !Path::new(&config.whisper_cpp.model).exists()
+    {
         warnings.push(PreflightWarning {
             message: format!(
                 "whisper model file not found: {} (update [whisper_cpp].model)",

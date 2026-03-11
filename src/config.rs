@@ -9,6 +9,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub whisper_cpp: WhisperCppConfig,
     #[serde(default)]
+    pub whisper_remote: WhisperRemoteConfig,
+    #[serde(default)]
+    pub whisper: WhisperConfig,
+    #[serde(default)]
     pub hotkey: HotkeyConfig,
     #[serde(default)]
     pub paste: PasteConfig,
@@ -90,6 +94,46 @@ pub struct WhisperCppConfig {
     pub use_gpu: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct WhisperRemoteConfig {
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    #[serde(default = "default_remote_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_remote_model")]
+    pub model: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_remote_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+impl Default for WhisperRemoteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_false(),
+            endpoint: default_remote_endpoint(),
+            model: default_remote_model(),
+            api_key: String::new(),
+            timeout_secs: default_remote_timeout_secs(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct WhisperConfig {
+    #[serde(default = "default_whisper_backend")]
+    pub backend: String,
+}
+
+impl Default for WhisperConfig {
+    fn default() -> Self {
+        Self {
+            backend: default_whisper_backend(),
+        }
+    }
+}
+
 impl Default for WhisperCppConfig {
     fn default() -> Self {
         Self {
@@ -111,6 +155,26 @@ fn default_whisper_threads() -> usize {
 
 fn default_whisper_temperature() -> f32 {
     0.0
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_remote_endpoint() -> String {
+    "https://api.openai.com/v1/audio/transcriptions".to_owned()
+}
+
+fn default_remote_model() -> String {
+    "whisper-1".to_owned()
+}
+
+fn default_remote_timeout_secs() -> u64 {
+    60
+}
+
+fn default_whisper_backend() -> String {
+    "cpp".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -189,6 +253,8 @@ mod tests {
 
         assert_eq!(cfg.language_detection, LanguageDetectionConfig::default());
         assert_eq!(cfg.whisper_cpp, WhisperCppConfig::default());
+        assert_eq!(cfg.whisper_remote, WhisperRemoteConfig::default());
+        assert_eq!(cfg.whisper, WhisperConfig::default());
         assert_eq!(cfg.hotkey, HotkeyConfig::default());
         assert_eq!(cfg.paste, PasteConfig::default());
         assert_eq!(cfg.recorder, RecorderConfig::default());
@@ -212,6 +278,16 @@ mod tests {
             temperature = 0.2
             use_gpu = true
 
+            [whisper_remote]
+            enabled = true
+            endpoint = "https://example.com/v1/audio/transcriptions"
+            model = "whisper-1"
+            api_key = "test-key"
+            timeout_secs = 30
+
+            [whisper]
+            backend = "remote"
+
             [hotkey]
             key = "f9"
 
@@ -232,6 +308,9 @@ mod tests {
         assert_eq!(cfg.whisper_cpp.model, "models/ggml-small.bin");
         assert_eq!(cfg.whisper_cpp.threads, 6);
         assert!(cfg.whisper_cpp.use_gpu);
+        assert!(cfg.whisper_remote.enabled);
+        assert_eq!(cfg.whisper_remote.api_key, "test-key");
+        assert_eq!(cfg.whisper.backend, "remote");
         assert_eq!(cfg.hotkey.key, "f9");
         assert_eq!(cfg.paste.command[0], "ydotool");
         assert_eq!(cfg.recorder.backend, "pipewire");
