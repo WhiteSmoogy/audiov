@@ -10,7 +10,6 @@ temperature = 0.0
 
 # Optional acceleration flags (depends on your whisper.cpp build)
 use_gpu = false
-flash_attn = false
 
 [language_detection]
 # Enable language identification (LID) before transcription.
