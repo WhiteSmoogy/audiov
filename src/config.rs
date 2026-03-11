@@ -82,8 +82,6 @@ pub struct WhisperCppConfig {
     pub temperature: f32,
     #[serde(default)]
     pub use_gpu: bool,
-    #[serde(default)]
-    pub flash_attn: bool,
 }
 
 impl Default for WhisperCppConfig {
@@ -93,7 +91,6 @@ impl Default for WhisperCppConfig {
             threads: default_whisper_threads(),
             temperature: default_whisper_temperature(),
             use_gpu: false,
-            flash_attn: false,
         }
     }
 }
@@ -142,7 +139,6 @@ mod tests {
             threads = 6
             temperature = 0.2
             use_gpu = true
-            flash_attn = true
             "#,
         )
         .expect("write config");
@@ -154,6 +150,5 @@ mod tests {
         assert_eq!(cfg.whisper_cpp.model, "models/ggml-small.bin");
         assert_eq!(cfg.whisper_cpp.threads, 6);
         assert!(cfg.whisper_cpp.use_gpu);
-        assert!(cfg.whisper_cpp.flash_attn);
     }
 }

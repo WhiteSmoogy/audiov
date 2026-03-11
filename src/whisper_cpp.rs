@@ -22,7 +22,6 @@ impl WhisperCppEngine {
     fn create_context(&self) -> Result<WhisperContext, TranscriptionError> {
         let mut params = WhisperContextParameters::default();
         params.use_gpu = self.cfg.use_gpu;
-        params.flash_attn = self.cfg.flash_attn;
 
         WhisperContext::new_with_params(&self.cfg.model, params)
             .map_err(|e| TranscriptionError::Engine(format!("init whisper context failed: {e}")))
@@ -74,9 +73,12 @@ impl WhisperCppEngine {
             }
         }
 
-        let lang_id = state.full_lang_id().ok();
+        let lang_id = state.full_lang_id_from_state().ok();
         let lang = lang_id.and_then(|id| whisper_rs::get_lang_str(id).map(str::to_owned));
-        let confidence = lang_id.and_then(|id| state.lang_detect_probs(id).ok());
+        let confidence = match (lang_id, state.lang_detect(0, self.cfg.threads)) {
+            (Some(id), Ok(probs)) => probs.get(id as usize).copied(),
+            _ => None,
+        };
 
         Ok((text, lang, confidence))
     }
