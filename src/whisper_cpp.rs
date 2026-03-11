@@ -1,15 +1,35 @@
 use crate::config::WhisperCppConfig;
 use crate::lid::DetectionCandidate;
 use crate::pipeline::{LanguageDetector, TranscriptionError, WhisperTranscriber};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::panic::{catch_unwind, set_hook, take_hook, AssertUnwindSafe};
+use std::sync::Mutex;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 pub struct WhisperCppEngine {
     cfg: WhisperCppConfig,
+    ctx: WhisperContext,
+    cache: Mutex<Option<CachedRun>>,
+}
+
+#[derive(Clone)]
+struct CachedRun {
+    audio_hash: u64,
+    requested_language: Option<String>,
+    text: String,
+    detected_language: Option<String>,
+    confidence: Option<f32>,
 }
 
 impl WhisperCppEngine {
-    pub fn new(cfg: WhisperCppConfig) -> Self {
-        Self { cfg }
+    pub fn new(cfg: WhisperCppConfig) -> Result<Self, TranscriptionError> {
+        let ctx = create_context(&cfg)?;
+        Ok(Self {
+            cfg,
+            ctx,
+            cache: Mutex::new(None),
+        })
     }
 
     fn pcm_i16_to_f32(&self, pcm_s16le_mono_16k: &[i16]) -> Vec<f32> {
@@ -19,12 +39,10 @@ impl WhisperCppEngine {
             .collect()
     }
 
-    fn create_context(&self) -> Result<WhisperContext, TranscriptionError> {
-        let mut params = WhisperContextParameters::default();
-        params.use_gpu = self.cfg.use_gpu;
-
-        WhisperContext::new_with_params(&self.cfg.model, params)
-            .map_err(|e| TranscriptionError::Engine(format!("init whisper context failed: {e}")))
+    fn audio_hash(&self, pcm_s16le_mono_16k: &[i16]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        pcm_s16le_mono_16k.hash(&mut hasher);
+        hasher.finish()
     }
 
     fn run_full(
@@ -32,9 +50,14 @@ impl WhisperCppEngine {
         pcm_s16le_mono_16k: &[i16],
         language: Option<&str>,
     ) -> Result<(String, Option<String>, Option<f32>), TranscriptionError> {
+        let audio_hash = self.audio_hash(pcm_s16le_mono_16k);
+        if let Some(cached) = self.lookup_cache(audio_hash, language) {
+            return Ok((cached.text, cached.detected_language, cached.confidence));
+        }
+
         let audio = self.pcm_i16_to_f32(pcm_s16le_mono_16k);
-        let ctx = self.create_context()?;
-        let mut state = ctx
+        let mut state = self
+            .ctx
             .create_state()
             .map_err(|e| TranscriptionError::Engine(format!("create whisper state failed: {e}")))?;
 
@@ -75,12 +98,70 @@ impl WhisperCppEngine {
 
         let lang_id = state.full_lang_id_from_state().ok();
         let lang = lang_id.and_then(|id| whisper_rs::get_lang_str(id).map(str::to_owned));
-        let confidence = match (lang_id, state.lang_detect(0, self.cfg.threads)) {
-            (Some(id), Ok(probs)) => probs.get(id as usize).copied(),
-            _ => None,
+        let confidence = match lang_id {
+            Some(id) => match safe_lang_detect(&mut state, self.cfg.threads) {
+                Ok(probs) => probs.get(id as usize).copied().or(Some(1.0)),
+                _ => Some(1.0),
+            },
+            None => None,
         };
 
+        self.store_cache(CachedRun {
+            audio_hash,
+            requested_language: language.map(str::to_owned),
+            text: text.clone(),
+            detected_language: lang.clone(),
+            confidence,
+        });
+
         Ok((text, lang, confidence))
+    }
+
+    fn lookup_cache(&self, audio_hash: u64, language: Option<&str>) -> Option<CachedRun> {
+        let cached = self.cache.lock().ok()?.clone()?;
+        if cached.audio_hash != audio_hash {
+            return None;
+        }
+
+        match (&cached.requested_language, language) {
+            (Some(cached_lang), Some(requested_lang)) if cached_lang == requested_lang => Some(cached),
+            (None, None) => Some(cached),
+            (None, Some(requested_lang))
+                if cached.detected_language.as_deref() == Some(requested_lang) =>
+            {
+                Some(cached)
+            }
+            _ => None,
+        }
+    }
+
+    fn store_cache(&self, run: CachedRun) {
+        if let Ok(mut cache) = self.cache.lock() {
+            *cache = Some(run);
+        }
+    }
+}
+
+fn create_context(cfg: &WhisperCppConfig) -> Result<WhisperContext, TranscriptionError> {
+    let mut params = WhisperContextParameters::default();
+    params.use_gpu = cfg.use_gpu;
+
+    WhisperContext::new_with_params(&cfg.model, params)
+        .map_err(|e| TranscriptionError::Engine(format!("init whisper context failed: {e}")))
+}
+
+fn safe_lang_detect(
+    state: &mut whisper_rs::WhisperState,
+    threads: usize,
+) -> Result<Vec<f32>, Box<dyn std::any::Any + Send>> {
+    let hook = take_hook();
+    set_hook(Box::new(|_| {}));
+    let result = catch_unwind(AssertUnwindSafe(|| state.lang_detect(0, threads)));
+    set_hook(hook);
+
+    match result {
+        Ok(inner) => Ok(inner.unwrap_or_default()),
+        Err(err) => Err(err),
     }
 }
 

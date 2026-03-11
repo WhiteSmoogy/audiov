@@ -13,8 +13,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub whisper: WhisperConfig,
     #[serde(default)]
-    pub hotkey: HotkeyConfig,
-    #[serde(default)]
     pub paste: PasteConfig,
     #[serde(default)]
     pub recorder: RecorderConfig,
@@ -178,24 +176,6 @@ fn default_whisper_backend() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct HotkeyConfig {
-    #[serde(default = "default_hotkey")]
-    pub key: String,
-}
-
-impl Default for HotkeyConfig {
-    fn default() -> Self {
-        Self {
-            key: default_hotkey(),
-        }
-    }
-}
-
-fn default_hotkey() -> String {
-    "windows+h".to_owned()
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct PasteConfig {
     #[serde(default = "default_paste_command")]
     pub command: Vec<String>,
@@ -255,7 +235,6 @@ mod tests {
         assert_eq!(cfg.whisper_cpp, WhisperCppConfig::default());
         assert_eq!(cfg.whisper_remote, WhisperRemoteConfig::default());
         assert_eq!(cfg.whisper, WhisperConfig::default());
-        assert_eq!(cfg.hotkey, HotkeyConfig::default());
         assert_eq!(cfg.paste, PasteConfig::default());
         assert_eq!(cfg.recorder, RecorderConfig::default());
     }
@@ -288,9 +267,6 @@ mod tests {
             [whisper]
             backend = "remote"
 
-            [hotkey]
-            key = "f9"
-
             [paste]
             command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
 
@@ -311,7 +287,6 @@ mod tests {
         assert!(cfg.whisper_remote.enabled);
         assert_eq!(cfg.whisper_remote.api_key, "test-key");
         assert_eq!(cfg.whisper.backend, "remote");
-        assert_eq!(cfg.hotkey.key, "f9");
         assert_eq!(cfg.paste.command[0], "ydotool");
         assert_eq!(cfg.recorder.backend, "pipewire");
         assert_eq!(

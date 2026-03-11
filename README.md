@@ -10,13 +10,13 @@
 - **远端 Whisper 接口**：支持通过配置切换到 Whisper 兼容的远端 API，并在配置文件中提供 `api_key`。
 - **稳定文本注入**：通过系统剪贴板与 `/dev/uinput`（或 `ydotool`）组合，减少中文与 Unicode 字符输入异常。
 - **兼容 Wayland / X11**：避免依赖脆弱的图形层模拟，适配主流 Linux 桌面环境。
-- **守护进程模式**：支持后台常驻与全局快捷键触发，按下录音、松开粘贴，流程简洁。
+- **手动录音模式**：前台交互录音，按一次 Enter 开始，再按一次 Enter 结束，便于调试与验证链路。
 
 ## 工作流程
 
 `audiov` 的处理链路如下：
 
-1. **Capture**：监听全局快捷键并采集麦克风音频（PipeWire/PulseAudio）。
+1. **Capture**：采集麦克风音频（PipeWire/PulseAudio）。
 2. **Inference**：调用内置 `whisper.cpp` 引擎完成语音转文本。
 3. **Clipboard**：将文本写入系统剪贴板。
 4. **Inject**：通过 `/dev/uinput`（或 `ydotool`）发送粘贴快捷键（如 `Ctrl+V` / `Ctrl+Shift+V`）。
@@ -41,21 +41,20 @@ git clone https://github.com/yourusername/audiov.git
 cd audiov
 cargo build --release
 
-# 运行守护进程
-./target/release/audiov --daemon --config ~/.config/audiov/config.toml
+# 运行手动录音模式
+./target/release/audiov --manual --config ~/.config/audiov/config.toml
 ```
 ### 启动参数
 
-- `--daemon`：以后台模式启动（会拉起一个 `--foreground` 子进程并返回）。
-- `--foreground`：前台运行（默认）。
+- `--manual`：前台交互录音模式，按一次 Enter 开始录音，再按一次 Enter 结束并转写。
 - `--config <path>`：指定配置文件路径。
+- `--transcribe-wav <path>`：直接转写一个 16kHz / mono / PCM16 WAV 文件。
 
 配置文件默认查找顺序：
 
 1. `AUDIOV_CONFIG` 环境变量；
 2. `~/.config/audiov/config.toml`（若存在）；
 3. 若不存在则直接报错（需要显式提供配置文件）。
-
 
 ## 语言识别（LID）接入决策（已确认）
 
@@ -89,9 +88,7 @@ cargo build --release
 
 可通过 `cargo test` 验证配置解析、语言决策以及“检测结果是否真实传入转写器”的核心逻辑。
 
-新增了最小可用的全局按键按住说话流程：监听全局热键（默认 `Windows+H`）按下开始录音、松开结束录音，随后执行转写，把文本写入剪贴板，并调用可配置命令向当前窗口发送粘贴按键。
-
-热键解析支持组合键，例如 `windows+h`、`ctrl+space`、`f8`。
+当前最小可用交互方式是手动录音：按一次 Enter 开始录音，再按一次 Enter 结束。随后执行转写，把文本写入剪贴板，并调用可配置命令向当前窗口发送粘贴按键。
 
 录音模块已抽象为 `NativeRecorder`，支持 `auto` / `pipewire` / `pulseaudio` / `alsa` 四种后端选择，默认优先尝试 PipeWire，再回退 PulseAudio 与 ALSA。
 
