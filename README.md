@@ -79,6 +79,8 @@ cargo build --release
 
 新增了最小可用的全局按键按住说话流程：监听全局热键（默认 `F8`）按下开始录音、松开结束录音，随后执行转写，把文本写入剪贴板，并调用可配置命令向当前窗口发送粘贴按键。
 
+录音模块已抽象为 `NativeRecorder`，支持 `auto` / `pipewire` / `pulseaudio` / `alsa` 四种后端选择，默认优先尝试 PipeWire，再回退 PulseAudio 与 ALSA。
+
 
 ### whisper.cpp 运行前准备
 

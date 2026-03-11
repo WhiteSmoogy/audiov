@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub hotkey: HotkeyConfig,
     #[serde(default)]
     pub paste: PasteConfig,
+    #[serde(default)]
+    pub recorder: RecorderConfig,
 }
 
 impl AppConfig {
@@ -135,6 +137,27 @@ pub struct PasteConfig {
     pub command: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RecorderConfig {
+    #[serde(default = "default_recorder_backend")]
+    pub backend: String,
+    #[serde(default)]
+    pub input_device: Option<String>,
+}
+
+impl Default for RecorderConfig {
+    fn default() -> Self {
+        Self {
+            backend: default_recorder_backend(),
+            input_device: None,
+        }
+    }
+}
+
+fn default_recorder_backend() -> String {
+    "auto".to_owned()
+}
+
 impl Default for PasteConfig {
     fn default() -> Self {
         Self {
@@ -168,6 +191,7 @@ mod tests {
         assert_eq!(cfg.whisper_cpp, WhisperCppConfig::default());
         assert_eq!(cfg.hotkey, HotkeyConfig::default());
         assert_eq!(cfg.paste, PasteConfig::default());
+        assert_eq!(cfg.recorder, RecorderConfig::default());
     }
 
     #[test]
@@ -193,6 +217,10 @@ mod tests {
 
             [paste]
             command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
+
+            [recorder]
+            backend = "pipewire"
+            input_device = "alsa_input.pci-0000_00_1f.3.analog-stereo"
             "#,
         )
         .expect("write config");
@@ -206,5 +234,10 @@ mod tests {
         assert!(cfg.whisper_cpp.use_gpu);
         assert_eq!(cfg.hotkey.key, "f9");
         assert_eq!(cfg.paste.command[0], "ydotool");
+        assert_eq!(cfg.recorder.backend, "pipewire");
+        assert_eq!(
+            cfg.recorder.input_device.as_deref(),
+            Some("alsa_input.pci-0000_00_1f.3.analog-stereo")
+        );
     }
 }
