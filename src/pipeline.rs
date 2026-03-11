@@ -2,6 +2,8 @@ use crate::config::LanguageDetectionConfig;
 use crate::lid::{
     choose_inference_language, DecisionReason, DetectionCandidate, InferenceLanguageDecision,
 };
+use crate::logging::unix_ms;
+use std::time::Instant;
 
 pub trait LanguageDetector {
     fn detect_language(&self, pcm_s16le_mono_16k: &[i16]) -> Vec<DetectionCandidate>;
@@ -42,7 +44,13 @@ where
         pcm_s16le_mono_16k: &[i16],
     ) -> Result<SessionOutput, TranscriptionError> {
         let (decision, retry_language_override) = if self.lid_config.enabled {
+            let started = Instant::now();
             let candidates = self.detector.detect_language(pcm_s16le_mono_16k);
+            eprintln!(
+                "[ts_ms={}][DEBUG] detect_language took_ms={}",
+                unix_ms(),
+                started.elapsed().as_millis()
+            );
             let decision = choose_inference_language(self.lid_config, &candidates);
             let language = if decision.reason == DecisionReason::SelectedFromDetection {
                 Some(decision.selected_language.clone())
@@ -68,17 +76,34 @@ where
             None
         };
 
+        let started = Instant::now();
         let mut text = self
             .transcriber
             .transcribe(pcm_s16le_mono_16k, forced_language_override)?;
+        eprintln!(
+            "[ts_ms={}][DEBUG] transcribe language={} took_ms={}",
+            unix_ms(),
+            forced_language_override.unwrap_or("auto"),
+            started.elapsed().as_millis()
+        );
 
         if text.trim().is_empty()
             && !self.lid_config.use_detected_language_for_inference
             && matches!(decision.reason, DecisionReason::SelectedFromDetection)
         {
             if let Some(language) = retry_language_override.as_deref() {
-                eprintln!("[DEBUG] retry transcription with detected language={language}");
+                eprintln!(
+                    "[ts_ms={}][DEBUG] retry transcription with detected language={language}",
+                    unix_ms()
+                );
+                let retry_started = Instant::now();
                 text = self.transcriber.transcribe(pcm_s16le_mono_16k, Some(language))?;
+                eprintln!(
+                    "[ts_ms={}][DEBUG] transcribe language={} took_ms={}",
+                    unix_ms(),
+                    language,
+                    retry_started.elapsed().as_millis()
+                );
             }
         }
 

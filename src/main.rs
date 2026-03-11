@@ -1,5 +1,6 @@
 use audiov::config::AppConfig;
 use audiov::kglobalaccel::{KGlobalAccelError, KGlobalAccelListener};
+use audiov::logging::unix_ms;
 use audiov::output::{send_paste_event, write_clipboard};
 use audiov::pipeline::{LanguageDetector, SessionProcessor, WhisperTranscriber};
 use audiov::preflight::run_startup_checks;
@@ -59,7 +60,7 @@ fn main() {
         .unwrap_or_else(|_| panic!("failed to load config: {}", args.config_path));
 
     for warning in run_startup_checks(&config) {
-        eprintln!("[WARN] {}", warning.message);
+        eprintln!("[ts_ms={}][WARN] {}", unix_ms(), warning.message);
     }
 
     let engine =
@@ -140,7 +141,7 @@ fn run_wav_transcription(config_path: &str, wav_path: &str) {
         .unwrap_or_else(|_| panic!("failed to load config: {config_path}"));
 
     for warning in run_startup_checks(&config) {
-        eprintln!("[WARN] {}", warning.message);
+        eprintln!("[ts_ms={}][WARN] {}", unix_ms(), warning.message);
     }
 
     let engine =
@@ -168,7 +169,8 @@ fn run_wav_transcription(config_path: &str, wav_path: &str) {
         .unwrap_or_else(|err| panic!("transcription failed: {err:?}"));
 
     eprintln!(
-        "[DEBUG] language={} reason={:?}",
+        "[ts_ms={}][DEBUG] language={} reason={:?}",
+        unix_ms(),
         output.language_decision.selected_language, output.language_decision.reason
     );
     println!("{}", output.text.trim());
@@ -225,7 +227,8 @@ fn handle_transcription_result<D, T>(
 {
     let stats = audio_stats(audio);
     eprintln!(
-        "[DEBUG] audio samples={} duration_ms={} peak={} rms={}",
+        "[ts_ms={}][DEBUG] audio samples={} duration_ms={} peak={} rms={}",
+        unix_ms(),
         stats.sample_count, stats.duration_ms, stats.peak, stats.rms
     );
 
@@ -239,14 +242,15 @@ fn handle_transcription_result<D, T>(
 
     let text = output.text.trim();
     eprintln!(
-        "[DEBUG] language={} reason={:?} text_len={}",
+        "[ts_ms={}][DEBUG] language={} reason={:?} text_len={}",
+        unix_ms(),
         output.language_decision.selected_language,
         output.language_decision.reason,
         text.len()
     );
 
     if text.is_empty() {
-        eprintln!("[INFO] empty transcription");
+        eprintln!("[ts_ms={}][INFO] empty transcription", unix_ms());
         return;
     }
 
@@ -275,8 +279,9 @@ fn run_hotkey_loop<D, T>(
     D: LanguageDetector,
     T: WhisperTranscriber,
 {
-    eprintln!(
-        "[INFO] audiov started with KDE global shortcut {}",
+        eprintln!(
+        "[ts_ms={}][INFO] audiov started with KDE global shortcut {}",
+        unix_ms(),
         config.hotkey.shortcut
     );
 
@@ -288,7 +293,7 @@ fn run_hotkey_loop<D, T>(
         }
 
         if let Some(recording) = active_recording.take() {
-            eprintln!("[INFO] stopping recording");
+            eprintln!("[ts_ms={}][INFO] stopping recording", unix_ms());
             let audio = match recording.stop_and_collect() {
                 Ok(samples) => samples,
                 Err(err) => {
@@ -298,7 +303,7 @@ fn run_hotkey_loop<D, T>(
             };
 
             if audio.is_empty() {
-                eprintln!("[INFO] empty recording");
+                eprintln!("[ts_ms={}][INFO] empty recording", unix_ms());
                 continue;
             }
 
@@ -308,7 +313,7 @@ fn run_hotkey_loop<D, T>(
 
         match recorder.start() {
             Ok(recording) => {
-                eprintln!("[INFO] recording...");
+                eprintln!("[ts_ms={}][INFO] recording...", unix_ms());
                 active_recording = Some(recording);
             }
             Err(err) => eprintln!("recording start failed: {err:?}"),
@@ -328,8 +333,11 @@ fn run_manual_loop<D, T>(
         panic!("manual mode requires an interactive terminal");
     }
 
-    eprintln!("[INFO] audiov started in manual mode");
-    eprintln!("[INFO] press Enter to start recording, Enter again to stop, Ctrl+C to exit");
+    eprintln!("[ts_ms={}][INFO] audiov started in manual mode", unix_ms());
+    eprintln!(
+        "[ts_ms={}][INFO] press Enter to start recording, Enter again to stop, Ctrl+C to exit",
+        unix_ms()
+    );
 
     loop {
         wait_for_enter("start");
@@ -340,7 +348,7 @@ fn run_manual_loop<D, T>(
                 continue;
             }
         };
-        eprintln!("[INFO] recording...");
+        eprintln!("[ts_ms={}][INFO] recording...", unix_ms());
 
         wait_for_enter("stop");
         let audio = match recording.stop_and_collect() {
@@ -352,7 +360,7 @@ fn run_manual_loop<D, T>(
         };
 
         if audio.is_empty() {
-            eprintln!("[INFO] empty recording");
+            eprintln!("[ts_ms={}][INFO] empty recording", unix_ms());
             continue;
         }
 

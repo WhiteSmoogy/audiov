@@ -1,6 +1,7 @@
 pub mod config;
 pub mod kglobalaccel;
 pub mod lid;
+pub mod logging;
 pub mod output;
 pub mod pipeline;
 pub mod preflight;
