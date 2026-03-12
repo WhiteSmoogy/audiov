@@ -1,7 +1,7 @@
 use audiov::config::AppConfig;
 use audiov::kglobalaccel::{KGlobalAccelError, KGlobalAccelListener};
 use audiov::logging::unix_ms;
-use audiov::output::{send_paste_event, write_clipboard};
+use audiov::output::{SystemTextOutput, TextOutput};
 use audiov::pipeline::{LanguageDetector, SessionProcessor, WhisperTranscriber};
 use audiov::preflight::run_startup_checks;
 use audiov::recorder::{ActiveRecording, NativeRecorder};
@@ -171,7 +171,8 @@ fn run_wav_transcription(config_path: &str, wav_path: &str) {
     eprintln!(
         "[ts_ms={}][DEBUG] language={} reason={:?}",
         unix_ms(),
-        output.language_decision.selected_language, output.language_decision.reason
+        output.language_decision.selected_language,
+        output.language_decision.reason
     );
     println!("{}", output.text.trim());
 }
@@ -229,7 +230,10 @@ fn handle_transcription_result<D, T>(
     eprintln!(
         "[ts_ms={}][DEBUG] audio samples={} duration_ms={} peak={} rms={}",
         unix_ms(),
-        stats.sample_count, stats.duration_ms, stats.peak, stats.rms
+        stats.sample_count,
+        stats.duration_ms,
+        stats.peak,
+        stats.rms
     );
 
     let output = match processor.process_session(audio) {
@@ -256,17 +260,10 @@ fn handle_transcription_result<D, T>(
 
     println!("{text}");
 
-    if let Err(err) = write_clipboard(text) {
-        eprintln!("[WARN] clipboard failed: {err:?}");
-        return;
-    }
+    let output_interface = SystemTextOutput;
 
-    if config.paste.command.is_empty() {
-        return;
-    }
-
-    if let Err(err) = send_paste_event(&config.paste.command) {
-        eprintln!("[WARN] paste event failed: {err:?}");
+    if let Err(err) = output_interface.copy_and_paste(text, &config.paste.command) {
+        eprintln!("[WARN] output interface failed: {err:?}");
     }
 }
 
@@ -279,7 +276,7 @@ fn run_hotkey_loop<D, T>(
     D: LanguageDetector,
     T: WhisperTranscriber,
 {
-        eprintln!(
+    eprintln!(
         "[ts_ms={}][INFO] audiov started with KDE global shortcut {}",
         unix_ms(),
         config.hotkey.shortcut
@@ -289,7 +286,10 @@ fn run_hotkey_loop<D, T>(
 
     loop {
         if let Err(err) = listener.wait_for_trigger() {
-            panic!("failed while waiting for KDE hotkey: {}", describe_kglobalaccel_error(err));
+            panic!(
+                "failed while waiting for KDE hotkey: {}",
+                describe_kglobalaccel_error(err)
+            );
         }
 
         if let Some(recording) = active_recording.take() {
