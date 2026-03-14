@@ -262,7 +262,7 @@ fn handle_transcription_result<D, T>(
 
     let output_interface = SystemTextOutput;
 
-    if let Err(err) = output_interface.copy_and_paste(text, &config.paste.command) {
+    if let Err(err) = output_interface.copy_and_paste(text, &config.paste) {
         eprintln!("[WARN] output interface failed: {err:?}");
     }
 }

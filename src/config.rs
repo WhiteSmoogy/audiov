@@ -228,8 +228,16 @@ fn default_hotkey_action_friendly() -> String {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct PasteConfig {
+    #[serde(default = "default_paste_mode")]
+    pub mode: String,
     #[serde(default = "default_paste_command")]
     pub command: Vec<String>,
+    #[serde(default = "default_fcitx5_service")]
+    pub fcitx5_service: String,
+    #[serde(default = "default_fcitx5_path")]
+    pub fcitx5_path: String,
+    #[serde(default = "default_fcitx5_interface")]
+    pub fcitx5_interface: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -256,9 +264,17 @@ fn default_recorder_backend() -> String {
 impl Default for PasteConfig {
     fn default() -> Self {
         Self {
+            mode: default_paste_mode(),
             command: default_paste_command(),
+            fcitx5_service: default_fcitx5_service(),
+            fcitx5_path: default_fcitx5_path(),
+            fcitx5_interface: default_fcitx5_interface(),
         }
     }
+}
+
+fn default_paste_mode() -> String {
+    "command".to_owned()
 }
 
 fn default_paste_command() -> Vec<String> {
@@ -266,10 +282,24 @@ fn default_paste_command() -> Vec<String> {
         "ydotool".to_owned(),
         "key".to_owned(),
         "29:1".to_owned(),
+        "42:1".to_owned(),
         "47:1".to_owned(),
         "47:0".to_owned(),
+        "42:0".to_owned(),
         "29:0".to_owned(),
     ]
+}
+
+fn default_fcitx5_service() -> String {
+    "org.fcitx.Fcitx5".to_owned()
+}
+
+fn default_fcitx5_path() -> String {
+    "/org/freedesktop/Fcitx5/Audiov".to_owned()
+}
+
+fn default_fcitx5_interface() -> String {
+    "org.fcitx.Fcitx5.Audiov1".to_owned()
 }
 #[cfg(test)]
 mod tests {
@@ -328,7 +358,11 @@ mod tests {
             action_friendly = "Toggle Recording"
 
             [paste]
-            command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
+            mode = "fcitx5"
+            command = ["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"]
+            fcitx5_service = "org.fcitx.Fcitx5"
+            fcitx5_path = "/org/freedesktop/Fcitx5/Audiov"
+            fcitx5_interface = "org.fcitx.Fcitx5.Audiov1"
 
             [recorder]
             backend = "pipewire"
@@ -350,7 +384,9 @@ mod tests {
         assert!(cfg.hotkey.enabled);
         assert_eq!(cfg.hotkey.shortcut, "Meta+H");
         assert_eq!(cfg.hotkey.action_unique, "toggle-recording");
+        assert_eq!(cfg.paste.mode, "fcitx5");
         assert_eq!(cfg.paste.command[0], "ydotool");
+        assert_eq!(cfg.paste.fcitx5_service, "org.fcitx.Fcitx5");
         assert_eq!(cfg.recorder.backend, "pipewire");
         assert_eq!(
             cfg.recorder.input_device.as_deref(),

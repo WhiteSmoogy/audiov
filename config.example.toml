@@ -64,9 +64,17 @@ action_unique = "toggle-recording"
 action_friendly = "Toggle Recording"
 
 [paste]
-# Command used to trigger paste event for focused app.
-# This default sequence means Ctrl+V in ydotool scan codes.
-command = ["ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
+# Output mode: command | clipboard | fcitx5
+mode = "command"
+
+# Command used to trigger paste event for focused app when mode = "command".
+# This default sequence means Ctrl+Shift+V in ydotool scan codes.
+command = ["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"]
+
+# Fcitx5 addon DBus endpoint used when mode = "fcitx5".
+fcitx5_service = "org.fcitx.Fcitx5"
+fcitx5_path = "/org/freedesktop/Fcitx5/Audiov"
+fcitx5_interface = "org.fcitx.Fcitx5.Audiov1"
 
 [recorder]
 # Native recorder backend: auto | pipewire | pulseaudio | alsa

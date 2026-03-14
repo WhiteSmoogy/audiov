@@ -41,28 +41,33 @@ pub fn run_startup_checks(config: &AppConfig) -> Vec<PreflightWarning> {
         });
     }
 
-    let clipboard_program = if env::var("WAYLAND_DISPLAY").is_ok() {
-        "wl-copy"
-    } else {
-        "xclip"
-    };
-
-    if !tool_exists(clipboard_program) {
-        warnings.push(PreflightWarning {
-            message: format!("missing clipboard dependency: {clipboard_program}"),
-        });
-    }
-
-    if let Some(program) = config.paste.command.first() {
-        if !tool_exists(program) {
+    match config.paste.mode.as_str() {
+        "command" => {
+            if let Some(program) = config.paste.command.first() {
+                if !tool_exists(program) {
+                    warnings.push(PreflightWarning {
+                        message: format!("missing paste command program: {program}"),
+                    });
+                }
+            } else {
+                warnings.push(PreflightWarning {
+                    message: "paste.mode=command but paste.command is empty".to_owned(),
+                });
+            }
+        }
+        "fcitx5" => {
+            if env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+                warnings.push(PreflightWarning {
+                    message: "paste.mode=fcitx5 requires DBUS_SESSION_BUS_ADDRESS".to_owned(),
+                });
+            }
+        }
+        "clipboard" => {}
+        other => {
             warnings.push(PreflightWarning {
-                message: format!("missing paste command program: {program}"),
+                message: format!("unsupported paste.mode: {other}"),
             });
         }
-    } else {
-        warnings.push(PreflightWarning {
-            message: "paste.command is empty; paste injection will fail".to_owned(),
-        });
     }
 
     warnings

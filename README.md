@@ -8,7 +8,7 @@
 
 - **本地离线识别**：基于 `whisper.cpp`，支持在本机 CPU/GPU 上完成语音转写，数据不离开设备。
 - **远端 Whisper 接口**：支持通过配置切换到 Whisper 兼容的远端 API，并在配置文件中提供 `api_key`。
-- **稳定文本注入**：通过系统剪贴板与 `/dev/uinput`（或 `ydotool`）组合，减少中文与 Unicode 字符输入异常。
+- **稳定文本注入**：支持通过系统剪贴板 + 粘贴命令，或通过 `fcitx5` addon 直接向当前输入上下文提交文本。
 - **兼容 Wayland / X11**：避免依赖脆弱的图形层模拟，适配主流 Linux 桌面环境。
 - **KDE 全局快捷键**：通过 `org.kde.KGlobalAccel` 注册全局快捷键，默认 `Meta+H` 单键切换录音。
 - **手动录音模式**：保留前台交互录音模式，便于调试与验证链路。
@@ -19,8 +19,8 @@
 
 1. **Capture**：监听 KDE 全局快捷键或手动触发，并采集麦克风音频（PipeWire/PulseAudio）。
 2. **Inference**：调用内置 `whisper.cpp` 引擎完成语音转文本。
-3. **Clipboard**：将文本写入系统剪贴板。
-4. **Inject**：通过 `/dev/uinput`（或 `ydotool`）发送粘贴快捷键（如 `Ctrl+V` / `Ctrl+Shift+V`）。
+3. **Clipboard**：通过 `arboard` 将文本写入系统剪贴板。
+4. **Inject**：通过外部粘贴命令，或通过 `fcitx5` addon 直接提交文本。
 5. **Restore（可选）**：恢复用户原有剪贴板内容。
 
 ## 快速开始
@@ -32,8 +32,8 @@
 请先准备以下组件：
 
 - Rust 工具链（`cargo`）
-- `ydotoold`（或自行配置 `uinput`/`udev` 权限）
-- 剪贴板工具（例如 Wayland 下的 `wl-clipboard`）
+- `ydotoold`（若使用 `paste.mode = "command"`）
+- `fcitx5`（若使用 `paste.mode = "fcitx5"`）
 - KDE Plasma（若使用默认全局快捷键模式）
 
 ### 编译与运行
@@ -48,6 +48,33 @@ cargo build --release
 
 # 手动录音模式
 ./target/release/audiov --manual --config ~/.config/audiov/config.toml
+```
+
+### fcitx5 模式快速路径
+
+如果你要绕开 `ydotool`/`uinput`，直接走 `fcitx5`：
+
+```bash
+./contrib/fcitx5-audiov/install-user.sh
+./contrib/fcitx5-audiov/restart-fcitx5.sh
+busctl --user introspect org.fcitx.Fcitx5 /org/freedesktop/Fcitx5/Audiov
+```
+
+然后把配置切到：
+
+```toml
+[paste]
+mode = "fcitx5"
+command = []
+fcitx5_service = "org.fcitx.Fcitx5"
+fcitx5_path = "/org/freedesktop/Fcitx5/Audiov"
+fcitx5_interface = "org.fcitx.Fcitx5.Audiov1"
+```
+
+最后运行：
+
+```bash
+cargo run -- --config /home/white/Projects/audiov/config.local.toml --manual
 ```
 ### 启动参数
 
@@ -122,6 +149,10 @@ action_friendly = "Toggle Recording"
 
 两种模式在结束录音后都会执行转写，把文本写入剪贴板，并调用可配置命令向当前窗口发送粘贴按键。
 
+Linux 下的剪贴板内容由当前拥有者托管。`audiov` 在写入后会保持一个后台持有者，直到下一次写入替换它，以避免文本在粘贴前失效。
+
+若切换到 `paste.mode = "fcitx5"`，`audiov` 会在写入剪贴板后，通过 session D-Bus 调用一个 `fcitx5` addon 的 `CommitText` 方法，把识别结果直接提交给当前聚焦输入上下文。用户级安装、重启和 smoke test 见 [contrib/fcitx5-audiov/README.md](/home/white/Projects/audiov/contrib/fcitx5-audiov/README.md)。
+
 录音模块已抽象为 `NativeRecorder`，支持 `auto` / `pipewire` / `pulseaudio` / `alsa` 四种后端选择，默认优先尝试 PipeWire，再回退 PulseAudio 与 ALSA。
 
 
@@ -151,4 +182,4 @@ timeout_secs = 60
 
 ### 运行期可观测性与自检
 
-程序启动时会输出基础依赖检查告警（模型文件、`DBUS_SESSION_BUS_ADDRESS`、`arecord`、剪贴板工具、粘贴命令），并在每次会话打印 LID 最终采用语言与原因，便于排障。
+程序启动时会输出基础依赖检查告警（模型文件、`DBUS_SESSION_BUS_ADDRESS`、`arecord`、粘贴命令），并在每次会话打印 LID 最终采用语言与原因，便于排障。
