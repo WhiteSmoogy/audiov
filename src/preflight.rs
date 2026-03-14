@@ -41,33 +41,10 @@ pub fn run_startup_checks(config: &AppConfig) -> Vec<PreflightWarning> {
         });
     }
 
-    match config.paste.mode.as_str() {
-        "command" => {
-            if let Some(program) = config.paste.command.first() {
-                if !tool_exists(program) {
-                    warnings.push(PreflightWarning {
-                        message: format!("missing paste command program: {program}"),
-                    });
-                }
-            } else {
-                warnings.push(PreflightWarning {
-                    message: "paste.mode=command but paste.command is empty".to_owned(),
-                });
-            }
-        }
-        "fcitx5" => {
-            if env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
-                warnings.push(PreflightWarning {
-                    message: "paste.mode=fcitx5 requires DBUS_SESSION_BUS_ADDRESS".to_owned(),
-                });
-            }
-        }
-        "clipboard" => {}
-        other => {
-            warnings.push(PreflightWarning {
-                message: format!("unsupported paste.mode: {other}"),
-            });
-        }
+    if env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+        warnings.push(PreflightWarning {
+            message: "fcitx5 output requires DBUS_SESSION_BUS_ADDRESS".to_owned(),
+        });
     }
 
     warnings
